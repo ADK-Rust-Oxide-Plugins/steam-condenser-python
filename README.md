@@ -21,8 +21,6 @@ $ pip install steam-condenser
 
 ## Usage
 
-To start using Steam Condenser requiring the base file is usually enough:
-
 ```python
 import steamcondenser
 ```
