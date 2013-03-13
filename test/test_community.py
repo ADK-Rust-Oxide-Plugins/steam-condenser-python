@@ -41,15 +41,21 @@ class TestWebApi(object):
 
     def test_get(self):
         urllib2.urlopen = Mock(return_value=__builtin__)
+        urllib.urlencode = Mock(return_value='urlencode')
         __builtin__.read = Mock(return_value='data')
         assert_equal('data', WebApi.get('json', 'interface', 'method', 2,
                      test='param'))
         urllib2.urlopen.assert_called_once_with(
             'http://api.steampowered.com/interface/method/v0002/',
-            urllib.urlencode({'format': 'json',
-                              'key': '0123456789ABCDEF0123456789ABCDEF',
-                              'test': 'param'})
+            'urlencode')
+        urllib.urlencode.assert_called_once_with(
+            {'format': 'json', 'key': '0123456789ABCDEF0123456789ABCDEF',
+             'test': 'param'}
         )
 
+    @raises(WebApiError)
     def test_get_error(self):
-        pass
+        urllib2.urlopen = Mock(side_effect=urllib2.HTTPError('', 404,
+                                                             'not found',
+                                                             None, None))
+        WebApi.get('json', 'interface', 'method', 2, test='param')
