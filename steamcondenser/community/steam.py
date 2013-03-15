@@ -34,6 +34,7 @@ class SteamGame(object):
             self.icon_hash = game_data['img_icon_url']
             self.logo_hash = game_data['img_logo_url']
             self.name = game_data['name']
+            self.short_name = None
         else:
             url_regex = u'/%d/([0-9a-f])+.jpg' % app_id
             self.icon_hash = re.match(url_regex, game_data['gameIcon']
@@ -44,6 +45,124 @@ class SteamGame(object):
             self.short_name = game_data['gameFriendlyName'].lower()
             if self.short_name == str(self.app_id):
                 self.short_name = None
+
+    @classmethod
+    def check_steam_inf(cls, path):
+        """Check if a game is up-to-date by reading information from a
+        `steam.inf` file and comparing it to the Web API
+
+        Parameters:
+            path: A string containing the file system path to the `steam.inf`
+                file
+
+        Returns:
+            True if the game is up-to-date
+        """
+        steam_inf = open(path).read()
+        try:
+            app_id = int(re.match(ur'^\s*appID=(\d+)\s*$',
+                                  steam_inf,
+                                  re.I | re.M).groups(1))
+            version = int(re.match(ur'^\s*PatchVersion=([\d\.]+)\s*$',
+                                   steam_inf,
+                                   re.I | re.M).groups(1).replace('.', ''))
+            return cls.uptodate(app_id, version)
+        except SteamCondenserError, e:
+            raise e
+        except Exception:
+            raise SteamCondenserError('the steam.inf file "%s" is invalid'
+                                      % path)
+
+    @classmethod
+    def app_uptodate(cls, app_id, version):
+        """Return whether or not the given version of the specified game is
+        up-to-date
+
+        Parameters:
+            app_id: The integer application ID for the game
+            version: The version to check against the Web API
+
+        Returns:
+            True if the version is up-to-date
+        """
+        result = WebApi.json('ISteamApps', 'UpToDateCheck', 1, appid=app_id,
+                             version=version)
+        result = json.loads(result)['response']
+        if result['success']:
+            return result['up_to_date']
+        else:
+            raise SteamCondenserError(result['error'])
+
+    def player_count(self):
+        """Return the number of players currently playing this game"""
+        result = WebApi.json('ISteamUserStats', 'GetNumberOfCurrentPlayers',
+                             1, appid=self.app_id)
+        result = json.loads(result)['response']
+        return result['player_count']
+
+    def has_stats(self):
+        """Return whether this game has statistics available"""
+        return self.short_name is not None
+
+    @property
+    def icon_url(self):
+        """Return the URL for this game's icon image"""
+        if not self.icon_hash:
+            return ''
+        else:
+            return "http://media.steampowered.com/steamcommunity/public/" \
+                   "images/apps/%d/%s.jpg" % (self.app_id, self.icon_hash)
+
+    def leaderboard(self, id):
+        """Return the specified leaderboard for this game"""
+        return GameLeaderboard.leaderboard(self.short_name, id)
+
+    def leaderboards(self):
+        """Return a list of all of this game's leaderboards"""
+        return GameLeaderboard.leaderboards(self.short_name)
+
+    @property
+    def logo_url(self):
+        """Return the URL for this game's logo image"""
+        if not self.logo_hash:
+            return ''
+        else:
+            return "http://media.steampowered.com/steamcommunity/public/" \
+                   "images/apps/%d/%s.jpg" % (self.app_id, self.logo_hash)
+
+    @property
+    def logo_thumbnail_url(self):
+        """Return the URL for this game's logo image"""
+        if not self.logo_hash:
+            return ''
+        else:
+            return "http://media.steampowered.com/steamcommunity/public/" \
+                   "images/apps/%d/%s_thumb.jpg" % (self.app_id,
+                                                    self.logo_hash)
+
+    @property
+    def store_url(self):
+        """Return the URL of this game's Steam Store page"""
+        return "http://store.steampowered.com/app/%d" % self.app_id
+
+    def uptodate(self, version):
+        """Return whether the specified version of this game is up-to-date"""
+        return self.app_uptodate(self.app_id, version)
+
+    def user_stats(self, steam_id):
+        """Return a stats object for the specified user and this game
+
+        Parameters:
+            steam_id: The string custom URL or 64-bit integer steam ID64 of
+                the user
+
+        Returns:
+            The GameStats for this game and the specified user
+        """
+        if self.has_stats():
+            return GameStats.create_game_stats(steam_id, self.short_name)
+        else:
+            return None
 
 
 class SteamGroup(object):
