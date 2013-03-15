@@ -7,16 +7,80 @@
 
 
 from __future__ import absolute_import, division
+
 import datetime
 import json
 import re
 import urllib
 import urllib2
 
+from .errors import WebApiError
 
-class WebApiError(Exception):
-    """A Steam Web API error occured"""
-    pass
+
+class AppNews(object):
+    """Class to represent Steam news and can be used to load a list of current
+    news about specific games.
+
+    Attributes:
+        app_id: The integer value of the unique Steam Application ID of the
+            game (e.g. ``440`` for Team Fortress 2). See
+            <http://developer.valvesoftware.com/wiki/Steam_Application_IDs>
+            for all application IDs
+        author: A string containing the author of this news. *This may
+            contain HTML code.*
+        contents: A string containing the contents of this news.
+        date: A datetime object containing the date this news item has been
+            published
+        feed_label: A string containing the symbolic name of the feed this
+            news item belongs to
+        feed_name: A string containing the symbolic name of the feed this news
+            item belongs to
+        gid: An integer containing a unique identifier for this news item
+        title: A string containing the title of this news item
+        url: A string containing the original URL for this news item
+    """
+
+    def __init__(self, app_id, news_data):
+        """Construct a new AppNews object
+
+        Args:
+            app_id: The application ID of the game
+            news_data: The news data extracted from JSON
+        """
+        self.app_id = app_id
+        self.author = news_data['author']
+        self.contents = news_data['contents'].strip()
+        self.date = datetime.utcfromtimestamp(news_data['date'])
+        self.external = news_data['is_external_url']
+        self.feed_label = news_data['feedlabel']
+        self.feed_name = news_data['feedname']
+        self.gid = news_data['gid']
+        self.title = news_data['title']
+        self.url = news_data['url']
+
+    @classmethod
+    def news_for_app(cls, app_id, count=5, max_length=None):
+        """Load the news for the specified game
+
+        Args:
+            app_id: The application ID of the game
+
+        Returns:
+            A list of AppNews items for the specified game
+        """
+        data = WebApi.json('ISteamNews', 'GetNewsForApp', 2, appid=app_id,
+                           count=count, maxlength=max_length)
+        news_data = json.loads(data)
+        news_items = []
+        for item in news_data['appnews']['newsitems']:
+            news_items.append(AppNews(app_id, news_data))
+        return news_items
+
+    def __unicode__(self):
+        return u"%s: %s" % (self.feed_label, self.title)
+
+    def __str__(self):
+        return unicode(self).encode('utf-8')
 
 
 class WebApi(object):
@@ -25,6 +89,9 @@ class WebApi(object):
     The Web API requires you to register a domain with your Steam account
     to acquire an API key. See <http://steamcommunity.com/dev> for further
     details.
+
+    Attributes:
+        api_key: The 128bit API key as a hexidecimal string
     """
 
     _api_key = None
@@ -32,17 +99,17 @@ class WebApi(object):
     class __metaclass__(type):
         @property
         def api_key(cls):
-            """Returns the global Steam Web API Key for this steam-condenser
+            """Return the global Steam Web API Key for this steam-condenser
             session
             """
             return cls._api_key
 
         @api_key.setter
         def api_key(cls, api_key):
-            """Sets the global Steam Web API key for this steam-condenser
+            """Set the global Steam Web API key for this steam-condenser
             session
 
-            Attributes:
+            Parameters:
                 api_key: The 128bit API key as a hexidecimal string
 
             Raises:
@@ -55,7 +122,7 @@ class WebApi(object):
 
     @classmethod
     def interfaces(cls):
-        """Returns a raw list of interfaces and their methods that are
+        """Return a raw list of interfaces and their methods that are
         available in Steam's Web API
 
         This can be used for reference when accessing interfaces and methods
@@ -82,7 +149,7 @@ class WebApi(object):
 
     @classmethod
     def get(cls, fmt, interface, method, version=1, **kwargs):
-        """Fetches data from the Steam Web API using the specified interface,
+        """Fetch data from the Steam Web API using the specified interface,
         method and version.
 
         Additional parameters to the HTTP GET request can be supplied via
@@ -113,69 +180,3 @@ class WebApi(object):
             return urllib2.urlopen(url, urllib.urlencode(params)).read()
         except urllib2.HTTPError, e:
             raise WebApiError(e.reason)
-
-
-class AppNews(object):
-    """Class to represent Steam news and can be used to load a list of current
-    news about specific games.
-
-    Attributes:
-        app_id: The integer value of the unique Steam Application ID of the
-            game (e.g. ``440`` for Team Fortress 2). See
-            <http://developer.valvesoftware.com/wiki/Steam_Application_IDs>
-            for all application IDs
-        author: A string containing the author of this news. *This may
-            contain HTML code.*
-        contents: A string containing the contents of this news.
-        date: A datetime object containing the date this news item has been
-            published
-        feed_label: A string containing the symbolic name of the feed this
-            news item belongs to
-        feed_name: A string containing the symbolic name of the feed this news
-            item belongs to
-        gid: An integer containing a unique identifier for this news item
-        title: A string containing the title of this news item
-        url: A string containing the original URL for this news item
-    """
-
-    def __init__(self, app_id, news_data):
-        """Constructs a new AppNews object
-
-        Args:
-            app_id: The application ID of the game
-            news_data: The news data extracted from JSON
-        """
-        self.app_id = app_id
-        self.author = news_data['author']
-        self.contents = news_data['contents'].strip()
-        self.date = datetime.utcfromtimestamp(news_data['date'])
-        self.external = news_data['is_external_url']
-        self.feed_label = news_data['feedlabel']
-        self.feed_name = news_data['feedname']
-        self.gid = news_data['gid']
-        self.title = news_data['title']
-        self.url = news_data['url']
-
-    @classmethod
-    def news_for_app(cls, app_id, count=5, max_length=None):
-        """Loads the news for the specified game
-
-        Args:
-            app_id: The application ID of the game
-
-        Returns:
-            A list of AppNews items for the specified game
-        """
-        data = WebApi.json('ISteamNews', 'GetNewsForApp', 2, appid=app_id,
-                           count=count, maxlength=max_length)
-        news_data = json.loads(data)
-        news_items = []
-        for item in news_data['appnews']['newsitems']:
-            news_items.append(AppNews(app_id, news_data))
-        return news_items
-
-    def __unicode__(self):
-        return u"%s: %s" % (self.feed_label, self.title)
-
-    def __str__(self):
-        return unicode(self).encode('utf-8')

@@ -5,8 +5,11 @@
 #
 # Copyright (c) 2013 Sebastian Staudt
 
-
 from __future__ import absolute_import
 
-from . import community
-from . import servers
+from ..errors import SteamCondenserError
+
+
+class WebApiError(SteamCondenserError):
+    """A Steam Web API error occured"""
+    pass

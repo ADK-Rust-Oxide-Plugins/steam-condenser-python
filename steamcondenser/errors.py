@@ -6,7 +6,6 @@
 # Copyright (c) 2013 Sebastian Staudt
 
 
-from __future__ import absolute_import
-
-from . import community
-from . import servers
+class SteamCondenserError(Exception):
+    """A steam-condenser error occured"""
+    pass

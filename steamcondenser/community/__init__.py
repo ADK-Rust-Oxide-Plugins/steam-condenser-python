@@ -8,5 +8,8 @@
 
 from __future__ import absolute_import
 
-from . import community
-from . import servers
+# Match namespacing from the other steam-condenser implementations
+from .errors import *
+from .game import *
+from .steam import *
+from .webapi import *
