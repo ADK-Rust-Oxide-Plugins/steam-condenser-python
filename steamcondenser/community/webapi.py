@@ -179,4 +179,9 @@ class WebApi(object):
         try:
             return urllib2.urlopen(url, urllib.urlencode(params)).read()
         except urllib2.HTTPError, e:
-            raise WebApiError(e.reason)
+            if hasattr(e, 'reason'):
+                raise WebApiError(e.reason)
+            elif hasattr(e, 'code'):
+                raise WebApiError(e.code)
+            else:
+                raise WebApiError('urlopen failed')
