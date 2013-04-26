@@ -10,9 +10,12 @@ from __future__ import absolute_import, division
 
 import datetime
 import json
+import re
+import urllib2
+import xml.etree.ElementTree as ET
 
 from .errors import SteamCondenserError
-from .steam import SteamId
+from .steam import SteamId, SteamGame
 from .webapi import WebApi
 
 
@@ -41,20 +44,20 @@ class GameAchievement(object):
         Parameters:
             user: The SteamId for the player that this achievement belongs to
             game: The SteamGame for the game that this achievement belongs to
-            achievement_data: A dict containing the achievement data extracted
-                from the Steam API XML
+            achievement_data: The XML ElementTree element containing the
+                XML data from the Steam API
         """
-        self.api_name = achievement_data['apiname']
-        self.description = achievement_data['description']
+        self.api_name = achievement_data.apiname.text
+        self.description = achievement_data.description.text
         self.game = game
-        self.icon_closed_url = achievement_data['iconClosed']
-        self.icon_open_url = achievement_data['iconOpen']
-        self.name = achievement_data['name']
-        self.unlocked = achievement_data['closed']
+        self.icon_closed_url = achievement_data.iconClosed.text
+        self.icon_open_url = achievement_data.iconOpen.text
+        self.name = achievement_data.name.text
+        self.unlocked = bool(achievement_data.closed.text)
         self.user = user
-        if self.unlocked and achievement_data['unlockTimestamp']:
+        if self.unlocked and achievement_data.unlockTimestamp:
             self.timestamp = datetime.utcfromtimestamp(
-                achievement_data['unlockTimestamp'])
+                achievement_data.unlockTimestamp.text)
         else:
             self.timestamp = None
 
@@ -341,3 +344,361 @@ class GameInventory(object):
             return subclasses[app_id](*args, **kwargs)
         except KeyError:
             return GameInventory(*args, **kwargs)
+
+
+class GameLeaderboard(object):
+    """Class to represent a single leaderboard for a specific game
+
+    Attributes:
+        display_type: The integer display type of the scores
+        entry_count: The integer number of entries on this leaderboard
+        id: The integer ID of this leaderboard
+        name: The string name of this leaderboard
+        sort_method: The integer sort method of this leaderboard
+    """
+
+    DISPLAY_TYPE_NONE = 0
+    DISPLAY_TYPE_NUMERIC = 1
+    DISPLAY_TYPE_SECONDS = 2
+    DISPLAY_TYPE_MILLISECONDS = 3
+
+    SORT_METHOD_NONE = 0
+    SORT_METHOD_ASC = 1
+    SORT_METHOD_DESC = 2
+
+    _leaderboards = {}
+
+    def __init__(self, board_data):
+        """Construct a new GameLeaderboard instance with the given XML data
+
+        Parameters:
+            board_data: A dict containing the XML data for the leaderboard
+        """
+        self.url = board_data.url.text
+        self.id = int(board_data.libid.text)
+        self.name = board_data.name.text
+        self.entry_count = int(board_data.entries.text)
+        self.sort_method = int(board_data.sortmethod.text)
+        self.displaY_type = int(board_data.displaytype.text)
+
+    def entry_for_steam_id(self, steam_id):
+        """Return the leaderboard entry for the specified SteamID
+
+        Parameters:
+            steam_id: The integer Steam ID64 or the SteamId for the user
+
+        Returns:
+            The GameLeaderboardEntry for the user or None
+
+        Raises:
+            SteamCondenserError: an error occred while fetching the
+                leaderboard
+        """
+        if isinstance(steam_id, SteamId):
+            steam_id = steam_id.steam_id64
+        xml = ''
+        try:
+            xml = urllib2.urlopen(
+                "%s&steamid=%d" % (self.url, steam_id)).read()
+        except urllib2.HTTPError:
+            raise SteamCondenserError('error fetching leaderboard')
+        root = ET.fromstring(xml)
+        error = root.find('error')
+        if error:
+            raise SteamCondenserError(error.text)
+        for entry in root.iter('entries'):
+            for entry_data in entry.iter('entry'):
+                if int(entry_data.steamid.text) == steam_id:
+                    return GameLeaderboardEntry(entry_data, self)
+        return None
+
+    def entry_for_steam_id_friends(self, steam_id):
+        """Return a list of entries in this leaderboard for the user with the
+        given SteamID and his/her friends
+
+        Parameters:
+            steam_id: The integer Steam ID64 or the SteamId for the user
+
+        Returns:
+             A list of GameLeaderboardEntrys for the user and the user's
+             friends
+
+        Raises:
+            SteamCondenserError: An error occured while fetching the
+                leaderboard
+        """
+        if isinstance(steam_id, SteamId):
+            steam_id = steam_id.steam_id64
+        xml = ''
+        try:
+            xml = urllib2.urlopen(
+                "%s&steamid=%d" % (self.url, steam_id)).read()
+        except urllib2.HTTPError:
+            raise SteamCondenserError('error fetching leaderboard')
+        root = ET.fromstring(xml)
+        error = root.find('error')
+        if error:
+            raise SteamCondenserError(error.text)
+        entries = []
+        for entry in root.iter('entries'):
+            for entry_data in entry.iter('entry'):
+                rank = int(entry_data.rank.text)
+                entries[rank] = GameLeaderboardEntry(entry_data, self)
+        return entries
+
+    def entry_range(self, first, last):
+        """Return the entries on this leaderboard for a given rank range
+
+        The range is inclusive and a maximum of 5001 entries can be returned
+        in a single request.
+
+        Parameters:
+            first: The integer index of the first entry to return
+            last: The integer index of the last entry to return
+
+        Returns:
+            A list of the requested GameLeaderboardEntrys
+
+        Raises:
+            SteamCondenserError: An error occured while fetching the
+                leaderboard
+        """
+        if last < first:
+            raise ValueError('last must be greater than first')
+        if last - first > 5000:
+            raise ValueError('leaderboard entry lookup is limited to 5001'
+                             ' entries per request')
+        xml = ''
+        try:
+            xml = urllib2.urlopen(
+                "%s&start=%d&end=%d" % (self.url, first, last)).read()
+        except urllib2.HTTPError:
+            raise SteamCondenserError('error fetching leaderboard')
+        root = ET.fromstring(xml)
+        error = root.find('error')
+        if error:
+            raise SteamCondenserError(error.text)
+        entries = []
+        for entry in root.iter('entries'):
+            for entry_data in entry.iter('entry'):
+                rank = int(entry_data.rank.text)
+                entries[rank] = GameLeaderboardEntry(entry_data, self)
+        return entries
+
+    @classmethod
+    def leaderboard(cls, game_name, id):
+        """Return the leaderboard for the specified parameters
+
+        Parameters:
+            game_name: The string name of the game
+            id: The integer ID or string name of the leaderboard to return
+
+        Returns:
+            The GameLeaderboard or None
+        """
+        leaderboards = cls.leaderboards(game_name)
+        if isinstance(id, int):
+            return leaderboards[id]
+        else:
+            for board in leaderboards:
+                if board.name == id:
+                    return board
+        return None
+
+    @classmethod
+    def leaderboards(cls, game_name):
+        """Return a list of a game's leaderboards
+
+        Parameters:
+            game_name: The string name of the game
+
+        Returns:
+            A list of GameLeaderboards
+        """
+        if game_name not in cls._leaderboards:
+            cls.load_leaderboards(game_name)
+        return cls._leaderboards[game_name]
+
+
+class GameLeaderboardEntry(object):
+    """Class to represent a single entry in a GameLeaderboard
+
+    Attributes:
+        steam_id: The SteamId of this entry's player
+        score: The integer score for this entry
+        rank: The integer rank for this entry
+        leaderboard: The GameLeaderboard that this entry belongs to
+    """
+
+    def __init__(self, entry_data, leaderboard):
+        """Construct a new GameLeaderboardEntry with the specified parameters
+
+        Parameters:
+            entry_data: The XML ElementTree element for the leaderboard entry
+            leaderboard: The GameLeaderboard that this entry belongs to
+        """
+        self.steam_id = SteamId(int(entry_data.steamid.text))
+        self.score = int(entry_data.score.text)
+        self.rank = int(entry_data.rank.text)
+        self.leaderboard = leaderboard
+
+
+class GameStats(object):
+    """Class to represent the game statistics for a single user and a specific
+    game
+
+    It is subclassed for individual games if the games provides statistics that
+    are unique to that game.
+
+    Attributes:
+        game: The SteamGame object for this game
+        hours_played: The string number of hours this game has been played
+        privacy_state: The string privacy setting of the user's Steam profile
+        user: The SteamId for the user
+    """
+
+    def __init__(self, user_id, game_id):
+        """Creates a new GameStats instance and fetches data from the Steam
+        Community for the specified user and game
+
+        Parameters:
+            user_id: The string custom URL or integer Steam ID64 for the
+                user
+            game_id: The integer application ID or string friendly name of
+                the game
+
+        Raises:
+            SteamCondenserError: If an error occured fetching data from the
+                Steam Community API
+        """
+        xml = ''
+        try:
+            xml = urllib2.urlopen(
+                "%s?xml=all" % (self.base_url(user_id, game_id))).read()
+        except urllib2.HTTPError:
+            raise SteamCondenserError('error fetching game stats')
+        root = ET.fromstring(xml)
+        error = root.find('error')
+        if error:
+            raise SteamCondenserError(error.text)
+        self.user = SteamId(user_id)
+        self.privacy_state = root.privacyState.text
+        if self.public:
+            match = re.match(
+                ur'http://steamcommunity\.com/+app/+([1-9][0-9]*)/',
+                root.game.gameLink.text)
+            app_id = int(match.groups[0])
+            self.game = SteamGame(app_id, root.game)
+            if root.stats.find('hoursPlayed'):
+                self.hours_played = root.stats.hoursPlayed.text
+            else:
+                self.hours_played = None
+        self._achievements = None
+
+    @property
+    def achievements(self):
+        if self._achievements is None:
+            self._achievements = []
+            xml = ''
+            try:
+                xml = urllib2.urlopen(
+                    "%s?xml=all" % (self._base_url)).read()
+            except urllib2.HTTPError:
+                raise SteamCondenserError('error fetching game stats')
+            root = ET.fromstring(xml)
+            error = root.find('error')
+            if error:
+                raise SteamCondenserError(error.text)
+            for achievement in root.iter('achievements'):
+                self._achievements.append(GameAchievement(self.user,
+                                                          self.game,
+                                                          achievement))
+        return self._achievements
+
+    @property
+    def achievements_done(self):
+        return len(self.achievements)
+
+    @property
+    def achievements_percentage(self):
+        return self.achievements_done / len(self.achievements)
+
+    @property
+    def _base_url(self):
+        return self.base_url(self.user.id, self.game.id)
+
+    @property
+    def public(self):
+        if self.privacy_state == 'public':
+            return True
+        else:
+            return False
+
+    @classmethod
+    def base_url(cls, user_id, game_id):
+        """Return the base Steam Community URL for the given player and game
+        IDs
+
+        Parameters:
+            user_id: The string custom URL or integer Steam ID64 for the user
+            game_id: The string short name or integer application ID for the
+            game
+
+        Returns:
+            The base URL for the specified Game Stats
+        """
+        if isinstance(game_id, int):
+            game_url = 'appid/%d' % game_id
+        else:
+            game_url = game_id
+        if isinstance(user_id, int):
+            return 'http://steamcommunity.com/profiles/%d/stats/%s' % (
+                user_id, game_url)
+        else:
+            return 'http://steamcommunity.com/id/%s/stats/%s' % (
+                user_id, game_url)
+
+    @classmethod
+    def create_game_stats(cls, steam_id, game_name):
+        """Creates a GameStats (or subclass) instance for the given user and
+        game
+
+        Parameters:
+            steam_id The string custom URL or integer Steam ID64 of the user
+            game_name: The string friendly name of the game
+
+        Returns:
+            A new GameStats instance for the specified parameters
+        """
+        subclasses = {
+            #'alienswarm': AlienSwarmStats,
+            #'cs:s': CSSStats,
+            #'defensegrid:awakening': DefenseGridStats,
+            #'dod:s': DoDSStats,
+            #'l4d': L4DStats,
+            #'l4d2': L4d2Stats,
+            #'portal2': Portal2Stats,
+            #'tf2': Tf2Stats,
+        }
+        if game_name in subclasses:
+            return subclasses[game_name](steam_id)
+        else:
+            return cls(steam_id, game_name)
+
+
+class GameWeapon(object):
+    """Class to represent basic functionality of in game weapons"""
+
+    def __init__(self, weapon_data):
+        """Construct a new GameWeapon from the specified parameters
+
+        Parameters:
+            weapon_data: The XML ElementTree element data for this weapon
+        """
+        self.kills = int(weapon_data.kills.text)
+        self.id = ''
+        self.shots = 0
+
+    @property
+    def avg_shots_per_kill(self):
+        return self.shots / self.kills

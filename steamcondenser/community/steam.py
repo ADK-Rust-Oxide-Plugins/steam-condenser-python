@@ -27,22 +27,23 @@ class SteamGame(object):
 
         Parameters:
             app_id: The integer application ID for this game
-            game_data: A dict containing the data for this game
+            game_data: The XML ElementTree element containing the data for
+                this game
         """
         self.app_id = app_id
         if 'name' in game_data:
-            self.icon_hash = game_data['img_icon_url']
-            self.logo_hash = game_data['img_logo_url']
-            self.name = game_data['name']
+            self.icon_hash = game_data.img_icon_url.text
+            self.logo_hash = game_data.img_logo_url.text
+            self.name = game_data.name.text
             self.short_name = None
         else:
             url_regex = u'/%d/([0-9a-f])+.jpg' % app_id
-            self.icon_hash = re.match(url_regex, game_data['gameIcon']
+            self.icon_hash = re.match(url_regex, game_data.gameIcon.text
                                       ).group(1)
-            self.logo_hash = re.match(url_regex, game_data['gameLogo']
+            self.logo_hash = re.match(url_regex, game_data.gameLogo.text
                                       ).group(1)
-            self.name = game_data['gameName']
-            self.short_name = game_data['gameFriendlyName'].lower()
+            self.name = game_data.gameName.text
+            self.short_name = game_data.gameFriendlyName.text.lower()
             if self.short_name == str(self.app_id):
                 self.short_name = None
 
@@ -115,10 +116,12 @@ class SteamGame(object):
 
     def leaderboard(self, id):
         """Return the specified leaderboard for this game"""
+        from .game import GameLeaderboard
         return GameLeaderboard.leaderboard(self.short_name, id)
 
     def leaderboards(self):
         """Return a list of all of this game's leaderboards"""
+        from .game import GameLeaderboard
         return GameLeaderboard.leaderboards(self.short_name)
 
     @property
@@ -160,6 +163,7 @@ class SteamGame(object):
             The GameStats for this game and the specified user
         """
         if self.has_stats():
+            from .game import GameStats
             return GameStats.create_game_stats(steam_id, self.short_name)
         else:
             return None
@@ -528,6 +532,7 @@ class SteamId(object):
         game = self._find_game(game_id)
         if not game.has_stats:
             raise SteamCondenserError('%s does not have stats' % game.name)
+        from .game import GameStats
         return GameStats.create_game_stats(self.id, game.short_name)
 
     @property
