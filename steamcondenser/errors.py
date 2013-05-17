@@ -9,3 +9,8 @@
 class SteamCondenserError(Exception):
     """A steam-condenser error occured"""
     pass
+
+
+class PacketFormatError(SteamCondenserError):
+    """A packet error occured"""
+    pass
