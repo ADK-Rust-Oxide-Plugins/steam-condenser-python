@@ -33,13 +33,15 @@ Installation
 ------------
 
 .. code-block:: bash
+
     $ pip install steam-condenser
 
 -----
 Usage
 -----
 
-.. code-block::
+.. code-block:: python
+
     import steamcondenser
 
 -------
