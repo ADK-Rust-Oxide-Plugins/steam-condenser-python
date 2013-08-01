@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
+import os
 from distutils.core import setup
+
+PROJECT_DIR = os.path.dirname(__file__)
 
 setup(
     name='steam-condenser',
@@ -22,19 +25,6 @@ setup(
         'Topic :: Games/Entertainment :: First Person Shooters',
         'Topic :: Software Development :: Libraries :: Python Modules',
     ],
-    long_description=
-'''
-===============
-steam-condenser
-===============
-
-The Steam Condenser is a multi-language library for querying the Steam
-Community, Source and GoldSrc game servers as well as the Steam master servers.
-Currently it is implemented in Java, PHP, Ruby and Python.
-
-License
-=======
-
-steam-condenser is distributed under the BSD license.
-''',
+    license='BSD',
+    long_description=open(os.path.join(PROJECT_DIR, 'README.rst')).read(),
 )
