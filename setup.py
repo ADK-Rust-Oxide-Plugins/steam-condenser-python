@@ -12,7 +12,7 @@ setup(
                 ' GoldSrc servers and Steam master servers',
     author='Peter Rowlands',
     author_email='peter@pmrowla.com',
-    url='https://github.com/pmrowla/steam-condenser-python',
+    url='https://github.com/ADK-Rust-Oxide-Plugins/steam-condenser-python',
     packages=['steamcondenser'],
     classifiers=[
         'Development Status :: 2 - Pre-Alpha',
